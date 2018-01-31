@@ -22,7 +22,7 @@ type MemoryStoreTestSuite struct {
 
 func (suite *MemoryStoreTestSuite) SetupTest() {
 	var err error
-	suite.msgStore, err = NewMemoryStoreFactory().Create("XYZZY", make(map[string]string))
+	suite.msgStore, err = NewMemoryStoreFactory().Create("XYZZY")
 	require.Nil(suite.T(), err)
 }
 

@@ -18,6 +18,7 @@ const (
 )
 
 type sqlStoreFactory struct {
+	settings map[string]string
 }
 
 type sqlStore struct {
@@ -31,31 +32,31 @@ type sqlStore struct {
 }
 
 // NewSQLStoreFactory returns a sql-based implementation of MessageStoreFactory
-func NewSQLStoreFactory() MessageStoreFactory {
-	return sqlStoreFactory{}
+func NewSQLStoreFactory(settings map[string]string) MessageStoreFactory {
+	return sqlStoreFactory{settings: settings}
 }
 
 // Create creates a new SQLStore implementation of the MessageStore interface
-func (f sqlStoreFactory) Create(sessionID string, sessionSettings map[string]string) (msgStore MessageStore, err error) {
-	sqlDriver, ok := sessionSettings[SQLStoreDriver]
+func (f sqlStoreFactory) Create(sessionID string) (msgStore MessageStore, err error) {
+	sqlDriver, ok := f.settings[SQLStoreDriver]
 	if !ok {
 		return nil, fmt.Errorf("sessionID: %s: required setting not found: %s", sessionID, SQLStoreDriver)
 	}
 
-	sqlDataSourceName, ok := sessionSettings[SQLStoreDataSourceName]
+	sqlDataSourceName, ok := f.settings[SQLStoreDataSourceName]
 	if !ok {
 		return nil, fmt.Errorf("sessionID: %s: required setting not found: %s", sessionID, SQLStoreDataSourceName)
 	}
 
 	sqlConnMaxLifetime := 0 * time.Second
-	if durationStr, ok := sessionSettings[SQLStoreConnMaxLifetime]; ok {
+	if durationStr, ok := f.settings[SQLStoreConnMaxLifetime]; ok {
 		sqlConnMaxLifetime, err = time.ParseDuration(durationStr)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	sqlTableNamePrefix, ok := sessionSettings[SQLStoreTableNamePrefix]
+	sqlTableNamePrefix, ok := f.settings[SQLStoreTableNamePrefix]
 	if !ok {
 		sqlTableNamePrefix = ""
 	}

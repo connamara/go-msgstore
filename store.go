@@ -26,7 +26,7 @@ type MessageStore interface {
 
 //The MessageStoreFactory interface is used by session to create a session specific message store
 type MessageStoreFactory interface {
-	Create(sessionID string, sessionSettings map[string]string) (MessageStore, error)
+	Create(sessionID string) (MessageStore, error)
 }
 
 type memoryStore struct {
@@ -105,7 +105,7 @@ func (store *memoryStore) GetMessages(beginSeqNum, endSeqNum int) ([][]byte, err
 
 type memoryStoreFactory struct{}
 
-func (f memoryStoreFactory) Create(sessionID string, sessionSettings map[string]string) (MessageStore, error) {
+func (f memoryStoreFactory) Create(sessionID string) (MessageStore, error) {
 	m := new(memoryStore)
 	m.Reset()
 	return m, nil

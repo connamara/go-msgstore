@@ -20,6 +20,7 @@ type msgDef struct {
 }
 
 type fileStoreFactory struct {
+	settings map[string]string
 }
 
 type fileStore struct {
@@ -70,13 +71,13 @@ func closeFile(f *os.File) error {
 }
 
 // NewFileStoreFactory returns a file-based implementation of MessageStoreFactory
-func NewFileStoreFactory() MessageStoreFactory {
-	return fileStoreFactory{}
+func NewFileStoreFactory(settings map[string]string) MessageStoreFactory {
+	return fileStoreFactory{settings: settings}
 }
 
 // Create creates a new FileStore implementation of the MessageStore interface
-func (f fileStoreFactory) Create(sessionID string, sessionSettings map[string]string) (msgStore MessageStore, err error) {
-	dirname, ok := sessionSettings[FileStorePath]
+func (f fileStoreFactory) Create(sessionID string) (msgStore MessageStore, err error) {
+	dirname, ok := f.settings[FileStorePath]
 	if !ok {
 		return nil, fmt.Errorf("sessionID: %s: required setting not found: %s", sessionID, FileStorePath)
 	}

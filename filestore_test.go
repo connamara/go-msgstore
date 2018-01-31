@@ -24,7 +24,7 @@ func (suite *FileStoreTestSuite) SetupTest() {
 
 	// create store
 	var err error
-	suite.msgStore, err = NewFileStoreFactory().Create("FIX.4.4-SENDER-TARGET", settings)
+	suite.msgStore, err = NewFileStoreFactory(settings).Create("FIX.4.4-SENDER-TARGET")
 	require.Nil(suite.T(), err)
 }
 

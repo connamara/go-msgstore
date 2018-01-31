@@ -45,7 +45,7 @@ func (suite *SQLStoreTestSuite) SetupTest() {
 	settings := map[string]string{SQLStoreDriver: sqlDriver, SQLStoreDataSourceName: sqlDsn, SQLStoreConnMaxLifetime: "14400s"}
 
 	// create store
-	suite.msgStore, err = NewSQLStoreFactory().Create(sessionID, settings)
+	suite.msgStore, err = NewSQLStoreFactory(settings).Create(sessionID)
 	require.Nil(suite.T(), err)
 }
 
