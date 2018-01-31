@@ -1,0 +1,2 @@
+DROP DATABASE IF EXISTS msgstore;
+CREATE DATABASE msgstore;
