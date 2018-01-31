@@ -13,6 +13,8 @@ const (
 	SQLStoreDataSourceName string = "SQLStoreDataSourceName"
 	// SQLStoreConnMaxLifetime is the value that will be passed to database/sql SetConnMaxLifetime.
 	SQLStoreConnMaxLifetime string = "SQLStoreConnMaxLifetime"
+	// SQLStoreTableNamePrefix will be prepended to the names of the database tables.  Optional.
+	SQLStoreTableNamePrefix string = "SQLStoreTableNamePrefix"
 )
 
 type sqlStoreFactory struct {
@@ -24,6 +26,7 @@ type sqlStore struct {
 	sqlDriver          string
 	sqlDataSourceName  string
 	sqlConnMaxLifetime time.Duration
+	sqlTableNamePrefix string
 	db                 *sql.DB
 }
 
@@ -51,16 +54,23 @@ func (f sqlStoreFactory) Create(sessionID string, sessionSettings map[string]str
 			return nil, err
 		}
 	}
-	return newSQLStore(sessionID, sqlDriver, sqlDataSourceName, sqlConnMaxLifetime)
+
+	sqlTableNamePrefix, ok := sessionSettings[SQLStoreTableNamePrefix]
+	if !ok {
+		sqlTableNamePrefix = ""
+	}
+
+	return newSQLStore(sessionID, sqlDriver, sqlDataSourceName, sqlConnMaxLifetime, sqlTableNamePrefix)
 }
 
-func newSQLStore(sessionID string, driver string, dataSourceName string, connMaxLifetime time.Duration) (store *sqlStore, err error) {
+func newSQLStore(sessionID string, driver string, dataSourceName string, connMaxLifetime time.Duration, tableNamePrefix string) (store *sqlStore, err error) {
 	store = &sqlStore{
 		sessionID:          sessionID,
 		cache:              &memoryStore{},
 		sqlDriver:          driver,
 		sqlDataSourceName:  dataSourceName,
 		sqlConnMaxLifetime: connMaxLifetime,
+		sqlTableNamePrefix: tableNamePrefix,
 	}
 	store.cache.Reset()
 
@@ -81,7 +91,7 @@ func newSQLStore(sessionID string, driver string, dataSourceName string, connMax
 
 // Reset deletes the store records and sets the seqnums back to 1
 func (store *sqlStore) Reset() error {
-	_, err := store.db.Exec(`DELETE FROM messages WHERE session_id=?`, store.sessionID)
+	_, err := store.db.Exec(fmt.Sprintf(`DELETE FROM %smessages WHERE session_id=?`, store.sqlTableNamePrefix), store.sessionID)
 	if err != nil {
 		return err
 	}
@@ -90,7 +100,7 @@ func (store *sqlStore) Reset() error {
 		return err
 	}
 
-	_, err = store.db.Exec(`UPDATE sessions SET creation_time=?, incoming_seqnum=?, outgoing_seqnum=? WHERE session_id=?`, store.cache.CreationTime(), store.cache.NextTargetMsgSeqNum(), store.cache.NextSenderMsgSeqNum(), store.sessionID)
+	_, err = store.db.Exec(fmt.Sprintf(`UPDATE %ssessions SET creation_time=?, incoming_seqnum=?, outgoing_seqnum=? WHERE session_id=?`, store.sqlTableNamePrefix), store.cache.CreationTime(), store.cache.NextTargetMsgSeqNum(), store.cache.NextSenderMsgSeqNum(), store.sessionID)
 
 	return err
 }
@@ -106,7 +116,7 @@ func (store *sqlStore) Refresh() error {
 func (store *sqlStore) populateCache() (err error) {
 	var creationTime time.Time
 	var incomingSeqNum, outgoingSeqNum int
-	row := store.db.QueryRow(`SELECT creation_time, incoming_seqnum, outgoing_seqnum FROM sessions WHERE session_id=?`, store.sessionID)
+	row := store.db.QueryRow(fmt.Sprintf(`SELECT creation_time, incoming_seqnum, outgoing_seqnum FROM %ssessions WHERE session_id=?`, store.sqlTableNamePrefix), store.sessionID)
 	err = row.Scan(&creationTime, &incomingSeqNum, &outgoingSeqNum)
 
 	// session record found, load it
@@ -123,7 +133,7 @@ func (store *sqlStore) populateCache() (err error) {
 	}
 
 	// session record not found, create it
-	_, err = store.db.Exec(`INSERT INTO sessions (creation_time, incoming_seqnum, outgoing_seqnum, session_id) VALUES(?, ?, ?, ?)`, store.cache.creationTime, store.cache.NextTargetMsgSeqNum(), store.cache.NextSenderMsgSeqNum(), store.sessionID)
+	_, err = store.db.Exec(fmt.Sprintf(`INSERT INTO %ssessions (creation_time, incoming_seqnum, outgoing_seqnum, session_id) VALUES(?, ?, ?, ?)`, store.sqlTableNamePrefix), store.cache.creationTime, store.cache.NextTargetMsgSeqNum(), store.cache.NextSenderMsgSeqNum(), store.sessionID)
 
 	return err
 }
@@ -140,7 +150,7 @@ func (store *sqlStore) NextTargetMsgSeqNum() int {
 
 // SetNextSenderMsgSeqNum sets the next MsgSeqNum that will be sent
 func (store *sqlStore) SetNextSenderMsgSeqNum(next int) error {
-	_, err := store.db.Exec(`UPDATE sessions SET outgoing_seqnum = ? WHERE session_id=?`, next, store.sessionID)
+	_, err := store.db.Exec(fmt.Sprintf(`UPDATE %ssessions SET outgoing_seqnum = ? WHERE session_id=?`, store.sqlTableNamePrefix), next, store.sessionID)
 	if err != nil {
 		return err
 	}
@@ -149,7 +159,7 @@ func (store *sqlStore) SetNextSenderMsgSeqNum(next int) error {
 
 // SetNextTargetMsgSeqNum sets the next MsgSeqNum that should be received
 func (store *sqlStore) SetNextTargetMsgSeqNum(next int) error {
-	_, err := store.db.Exec(`UPDATE sessions SET incoming_seqnum = ? WHERE session_id=?`, next, store.sessionID)
+	_, err := store.db.Exec(fmt.Sprintf(`UPDATE %ssessions SET incoming_seqnum = ? WHERE session_id=?`, store.sqlTableNamePrefix), next, store.sessionID)
 	if err != nil {
 		return err
 	}
@@ -174,13 +184,13 @@ func (store *sqlStore) CreationTime() time.Time {
 }
 
 func (store *sqlStore) SaveMessage(seqNum int, msg []byte) error {
-	_, err := store.db.Exec(`INSERT INTO messages (msgseqnum, message, session_id) VALUES(?, ?, ?)`, seqNum, string(msg), store.sessionID)
+	_, err := store.db.Exec(fmt.Sprintf(`INSERT INTO %smessages (msgseqnum, message, session_id) VALUES(?, ?, ?)`, store.sqlTableNamePrefix), seqNum, string(msg), store.sessionID)
 	return err
 }
 
 func (store *sqlStore) GetMessages(beginSeqNum, endSeqNum int) ([][]byte, error) {
 	var msgs [][]byte
-	rows, err := store.db.Query(`SELECT message FROM messages WHERE session_id=? AND msgseqnum>=? AND msgseqnum<=? ORDER BY msgseqnum`, store.sessionID, beginSeqNum, endSeqNum)
+	rows, err := store.db.Query(fmt.Sprintf(`SELECT message FROM %smessages WHERE session_id=? AND msgseqnum>=? AND msgseqnum<=? ORDER BY msgseqnum`, store.sqlTableNamePrefix), store.sessionID, beginSeqNum, endSeqNum)
 	if err != nil {
 		return nil, err
 	}
