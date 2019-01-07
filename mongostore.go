@@ -34,7 +34,7 @@ func NewMongoStoreFactoryWithTablePrefix(dbURL string, dbName string, tablePrefi
 
 // Create creates a new MongoStore implementation of the MessageStore interface
 func (f mongoStoreFactory) Create(sessionID string) (msgStore MessageStore, err error) {
-	return newmongoStore(f.dbURL, sessionID, f.dbName, f.tablePrefix)
+	return newMongoStore(f.dbURL, sessionID, f.dbName, f.tablePrefix)
 }
 
 type sessionData struct {
@@ -50,7 +50,7 @@ type messageData struct {
 	MsgSeqNum int    `bson:"msg_seq_num,omitempty"`
 }
 
-func newmongoStore(dbURL string, sessionID string, dbName string, tablePrefix string) (store *mongoStore, err error) {
+func newMongoStore(dbURL string, sessionID string, dbName string, tablePrefix string) (store *mongoStore, err error) {
 	store = &mongoStore{
 		sessionID:          sessionID,
 		creationTime:       time.Now(),
@@ -62,13 +62,9 @@ func newmongoStore(dbURL string, sessionID string, dbName string, tablePrefix st
 
 	if store.dbCtx, err = mgo.Dial(dbURL); err != nil {
 		return
-	}
-
-	if err = store.cache.Reset(); err != nil {
+	} else if err = store.cache.Reset(); err != nil {
 		return
-	}
-
-	if err = store.populateCache(); err != nil {
+	} else if err = store.populateCache(); err != nil {
 		return
 	}
 
@@ -81,9 +77,7 @@ func (store *mongoStore) Reset() (err error) {
 
 	if _, err = store.dbCtx.DB(store.dbName).C(store.messagesCollection).RemoveAll(messageFilter); err != nil {
 		return
-	}
-
-	if err = store.cache.Reset(); err != nil {
+	} else if err = store.cache.Reset(); err != nil {
 		return
 	}
 
@@ -107,33 +101,25 @@ func (store *mongoStore) Refresh() error {
 	return store.populateCache()
 }
 
-func (store *mongoStore) populateCache() error {
-	sessionFilter := &sessionData{SessionID: store.sessionID}
-	query := store.dbCtx.DB(store.dbName).C(store.sessionsCollection).Find(sessionFilter)
-	if cnt, errCnt := query.Count(); errCnt != nil {
-		return errCnt
-	} else if cnt > 0 {
+func (store *mongoStore) populateCache() (err error) {
+	query := store.dbCtx.DB(store.dbName).C(store.sessionsCollection).Find(&sessionData{SessionID: store.sessionID})
+	sessionData := &sessionData{}
+	if err = query.One(sessionData); err == nil {
 		// session record found, load it
-		sessionData := &sessionData{}
-		if errQuery := query.One(sessionData); errQuery != nil {
-			return errQuery
-		}
 		store.creationTime = sessionData.CreationTime
-		if errSet := store.cache.SetNextTargetMsgSeqNum(sessionData.IncomingSeqNum); errSet != nil {
-			return errSet
+		if err = store.cache.SetNextTargetMsgSeqNum(sessionData.IncomingSeqNum); err != nil {
+			return
+		} else if err = store.cache.SetNextSenderMsgSeqNum(sessionData.OutgoingSeqNum); err != nil {
+			return
 		}
-		if errSet := store.cache.SetNextSenderMsgSeqNum(sessionData.OutgoingSeqNum); errSet != nil {
-			return errSet
-		}
-	} else {
-		sessionFilter.IncomingSeqNum = store.cache.NextTargetMsgSeqNum()
-		sessionFilter.OutgoingSeqNum = store.cache.NextSenderMsgSeqNum()
-		sessionFilter.CreationTime = store.creationTime
-		if errInsert := store.dbCtx.DB(store.dbName).C(store.sessionsCollection).Insert(sessionFilter); errInsert != nil {
-			return errInsert
-		}
+	} else if err == mgo.ErrNotFound {
+		sessionData.SessionID = store.sessionID
+		sessionData.IncomingSeqNum = store.cache.NextTargetMsgSeqNum()
+		sessionData.OutgoingSeqNum = store.cache.NextSenderMsgSeqNum()
+		sessionData.CreationTime = store.creationTime
+		err = store.dbCtx.DB(store.dbName).C(store.sessionsCollection).Insert(sessionData)
 	}
-	return nil
+	return
 }
 
 // NextSenderMsgSeqNum returns the next MsgSeqNum that will be sent
@@ -208,26 +194,19 @@ func (store *mongoStore) SaveMessage(seqNum int, msg []byte) (err error) {
 }
 
 func (store *mongoStore) GetMessages(beginSeqNum, endSeqNum int) (msgs [][]byte, err error) {
-	msgFilter := &messageData{SessionID: store.sessionID}
-	//Marshal into database form
-	msgFilterBytes, err := bson.Marshal(msgFilter)
-	if err != nil {
-		return
-	}
-	seqFilter := bson.M{}
-	err = bson.Unmarshal(msgFilterBytes, &seqFilter)
-	if err != nil {
-		return
-	}
-	//Modify the query to use a range for the sequence filter
-	seqFilter["msg_seq_num"] = bson.M{
-		"$gte": beginSeqNum,
-		"$lte": endSeqNum,
+	//Use a range for the sequence filter
+	seqFilter := bson.M{
+		"session_id": store.sessionID,
+		"msg_seq_num": bson.M{
+			"$gte": beginSeqNum,
+			"$lte": endSeqNum,
+		},
 	}
 
 	iter := store.dbCtx.DB(store.dbName).C(store.messagesCollection).Find(seqFilter).Sort("msg_seq_num").Iter()
-	for iter.Next(msgFilter) {
-		msgs = append(msgs, msgFilter.Message)
+	msgData := &messageData{}
+	for iter.Next(msgData) {
+		msgs = append(msgs, msgData.Message)
 	}
 	err = iter.Close()
 	return
