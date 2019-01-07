@@ -2,6 +2,7 @@ language: go
 
 go:
     - 1.9
+    - tip
 
 services:
     - mongodb
@@ -9,3 +10,7 @@ services:
 env:
     global:
         - MONGODB_TEST_CXN=localhost
+
+matrix:
+    allow_failures:
+        - go: tip
