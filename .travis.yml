@@ -2,3 +2,10 @@ language: go
 
 go:
     - 1.9
+
+services:
+    - mongodb
+
+env:
+    global:
+        - MONGODB_TEST_CXN=localhost
